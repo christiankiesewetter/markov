@@ -14,16 +14,9 @@ class MarkovModel:
     def __init__(self, **kwargs):
         self.config.update(kwargs)
     
-
-    #def calc_freq_for_word2(self, word, seq):
-    #    sequence = np.array([self.__vocab['w2id1'][word] for word in seq])
-    #    adjacent_words = np.roll(sequence == word, 1)
-    #    words, counts = np.unique(sequence[adjacent_words], return_counts=True)
-    #    return words, counts
-
     def calc_freqs_for_word(self, word, seq, order):
         picks = np.array([False for _ in range(len(seq))])
-        for pos in range(0, len(seq), order):
+        for pos in range(0, len(seq)):
             if ' '.join(seq[pos:pos+order]) == ' '.join(word) and (pos+order < len(picks)):
                 picks[pos+order] = True
         
@@ -53,9 +46,9 @@ class MarkovModel:
 
     def train_n_order(self, allsequences, order, epsilon):
         inputs1 = len(self.__vocab[f'id2w{order}'])
-        outputs = len(self.__vocab['id2w1'])
+        outputs = len(self.vocab['id'])
         A_ij = np.ones((inputs1, outputs)) * epsilon
-        for w, id in self.__vocab[f'w2id1'].items():
+        for w, id in self.__vocab[f'w2id{order}'].items():
             wm, cm = self.calc_freqs_for_word(w, allsequences, order)
             a_j = np.zeros(outputs)
             if len(wm != 0):
@@ -64,7 +57,8 @@ class MarkovModel:
 
         self.A_ij.update({order: np.log(A_ij + epsilon) / outputs})
 
-    def train(self, sequences, order = 1, epsilon = 1e-10):
+
+    def train(self, sequences, order, epsilon = 1e-10):
         allsequences = np.array([unchar.sub(r'', word).lower() for line in sequences for word in line.split() if len(line.strip())>0 and len(word.strip())>0])
 
         self.setup_vocab(allsequences)
@@ -75,13 +69,15 @@ class MarkovModel:
 
     def __len__(self):
         return self.__overall_length
+    
 
-    def __call__(self, begin, nsteps = 10):
-        seq = [begin]
-        next_id = self.encode_seq([begin])
+    def __call__(self, begin, order, nsteps = 10):
+        seq = begin.lower().split(' ')
+        in_id = self.__vocab[f'w2id{order}'][tuple(seq[:order])]
         for step in range(nsteps):
-            next_id = np.argmax(self.A_ij[next_id])
-            seq.append(self.__vocab['id2w'][next_id])
+            out_id = np.argmax(self.A_ij[order][in_id])
+            seq.append(self.vocab['id'][out_id])
+            in_id = self.__vocab[f'w2id{order}'][tuple(seq[step+1:step+order+1])]
         return ' '.join(seq)
 
 
@@ -90,6 +86,5 @@ if __name__ == '__main__':
     with open('texts2.txt','r',encoding='utf8') as f:
         texts = [line for line in f.read().split('\n') if len(line.strip())]
     mm = MarkovModel()
-    mm.train(texts)
-    
-    #print(mm('ist', nsteps=30))
+    mm.train(texts, order = 2, epsilon = 0)
+    print(mm('es waren', order = 2, nsteps = 30))
