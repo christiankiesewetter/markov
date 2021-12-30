@@ -26,8 +26,7 @@ class MarkovModel:
         return dict(zip(words, freq))
 
     def setup_n_order_vocab(self, sequences, order):
-        sequences = set(sequences)
-        words = [m for m in product(sequences, repeat = order)]
+        words = set((' '.join(sequences[pos:pos+order]) for pos in range(len(sequences) - order)))
         id2w = dict(enumerate(words))
         w2id = {w:id for id, w in id2w.items()}
         self.__vocab.update({
@@ -46,15 +45,23 @@ class MarkovModel:
         inputs = len(self.vocab['id'])
         self.pi_i = np.ones_like((inputs)) * epsilon + self.__rel_probs
 
+    def print_progress(self, progress, order, width = 100):
+        if progress == 1.0:
+            print('\n')
+        else:
+            bars = '*' * int(progress * width)
+            print(f'{bars: <{width}} {progress * 100:.2f}%, order {order}', end='\r')
+
     def train_n_order(self, sequence, order, epsilon):
         self.A_ij.update({order:dict()})
-        for w, id in self.__vocab[f'w2id{order}'].items():
+        inputs = len(self.__vocab[f'w2id{order}'])
+        for num, (w, id) in enumerate(self.__vocab[f'w2id{order}'].items()):
             sparse_dict = self.calc_freqs_for_word(w, sequence, order, epsilon)
             if len(sparse_dict) > 0:
                 self.A_ij[order].update({id : sparse_dict})
+            self.print_progress(num / inputs, order)
 
-
-    def train(self, sequences, order, epsilon = 1e-10):
+    def train(self, sequences, orders, epsilon = 1e-10):
         allsequences = []
         for line in sequences: 
             for word in line.split():
@@ -68,8 +75,9 @@ class MarkovModel:
         self.setup_vocab(allsequences)
         self.train_frequency_probabilites(epsilon)
         
-        self.setup_n_order_vocab(sequences = allsequences, order = order)
-        self.train_n_order(allsequences, order = order, epsilon = epsilon)
+        for order in orders:
+            self.setup_n_order_vocab(sequences = allsequences, order = order)
+            self.train_n_order(allsequences, order = order, epsilon = epsilon)
 
     def __len__(self):
         return self.__overall_length
@@ -87,8 +95,8 @@ class MarkovModel:
 
 
 if __name__ == '__main__':
-    with open('texts2.txt','r',encoding='utf8') as f:
+    with open('texts.txt','r',encoding='utf8') as f:
         texts = [line for line in f.read().split('\n') if len(line.strip())]
     mm = MarkovModel()
-    mm.train(texts, order = 2)
+    mm.train(texts, orders = [1,2])
     print(mm('es waren', order = 2, nsteps = 30))
