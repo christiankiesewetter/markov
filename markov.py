@@ -100,24 +100,41 @@ class MarkovModel:
     def __len__(self):
         return self.__overall_length
     
+    def next_id(self, order, wkey):
+        curr_order = order
+        curr_wkey = wkey
+
+        while not curr_wkey in self.__vocab[f'w2id{curr_order}'] and curr_order > 0:
+            curr_order -= 1
+            curr_wkey = ' '.join(curr_wkey.split(' ')[-curr_order:])
+
+        if curr_order > 0:
+            in_id = self.__vocab[f'w2id{curr_order}'][curr_wkey]
+        else:
+            in_id = int(random.random() * len(self.__vocab[f'w2id1']))
+        
+        return in_id, curr_order
+    
+    def sample_word(self,order, in_id):
+        p = random.random()
+        sortedwords = sorted(self.A_ij[order][in_id].items(), key = lambda m: m[1], reverse = True)
+        out_id = sortedwords[-1][0] # default value
+        for (iid, prob) in sortedwords:
+            if prob >= p:
+                out_id = iid
+                break
+        return self.vocab['id'][out_id]
 
     def __call__(self, begin, order, nsteps = 10):
         seq = begin.lower().split(' ')
         wkey = ' '.join(seq[-order:])
-        if wkey in self.__vocab[f'w2id{order}']:
-            in_id = self.__vocab[f'w2id{order}'][wkey]
-        else:
-            in_id = int(random.random() * len(self.__vocab[f'w2id{order}']))
+        in_id, curr_order = self.next_id(order, wkey)
         
         for step in range(nsteps):
-            out_id = sorted(self.A_ij[order][in_id].items(), key = lambda m: m[1])[0][0]
-            seq.append(self.vocab['id'][out_id])
-            wkey = ' '.join(seq[step+1:step+order+1])
-            if wkey in self.__vocab[f'w2id{order}']:
-                in_id = self.__vocab[f'w2id{order}'][wkey]
-            else:
-                in_id = int(random.random() * len(self.__vocab[f'w2id{order}']))
-            
+            next_word = self.sample_word(curr_order, in_id)
+            seq.append(next_word)
+            wkey = ' '.join(seq[-order:])
+            in_id, curr_order = self.next_id(order, wkey)
 
         return ' '.join(seq)
 
@@ -127,9 +144,7 @@ if __name__ == '__main__':
         texts = [line for line in f.read().split('\n') if len(line.strip())]
     
     mm = MarkovModel('mm1.dat')
-    mm.train(texts, orders = [1,2,3,4])
-    mm.save('mm1.dat')
+    #mm.train(texts, orders = [1,2,3,4])
+    #mm.save('mm1.dat')
 
-    #res = mm('bloß', order = 1, nsteps = 1)
-    #res = mm(res, order = 2, nsteps = 1)
-    #print(mm(res, order = 3, nsteps = 1))
+    print(mm('Warum', order = 1, nsteps = 100))
