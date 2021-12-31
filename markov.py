@@ -12,8 +12,9 @@ class MarkovModel:
     A_ij = dict()
     vocab = dict()
     __overall_length = 0
+    epsilon = 1e-04
     
-    def __init__(self, model_path = None):
+    def __init__(self, model_path = None, epsilon = None):
         if not None is model_path and os.path.isfile(model_path):
             with open(model_path, 'rb') as mfile:
                 model = pickle.load(mfile)
@@ -21,6 +22,10 @@ class MarkovModel:
                 self.__vocab = model['internal_vocab'] 
                 self.vocab = model['external_vocab']
                 print('model loaded')
+
+        if not None is epsilon:
+            self.epsilon = epsilon
+
 
     def save(self, model_path = None):
         with open(file = f'{model_path}', mode = 'wb') as mfile:
@@ -32,7 +37,7 @@ class MarkovModel:
             pickle.dump(model, mfile)
             print('model stored')
         
-    def calc_freqs_for_word(self, word, seq, order, epsilon):
+    def calc_freqs_for_word(self, word, seq, order):
         picks = np.array([False for _ in range(len(seq))])
         for pos in range(0, len(seq)-order):
             if ' '.join(seq[pos:pos+order]) == word:
@@ -40,7 +45,7 @@ class MarkovModel:
         
         words, counts = np.unique(seq[picks], return_counts=True)
         words = np.array([self.vocab['word'][w] for w in words])
-        freq = np.log(counts  + epsilon / counts.sum())
+        freq = np.log(counts  + self.epsilon / counts.sum())
         return dict(zip(words, freq))
 
     def setup_n_order_vocab(self, sequences, order):
@@ -59,9 +64,9 @@ class MarkovModel:
         self.vocab['id'] = dict(enumerate(words))
         self.vocab['word'] = {v:k for k,v in self.vocab['id'].items()}
 
-    def train_frequency_probabilites(self, epsilon):
+    def train_frequency_probabilites(self):
         inputs = len(self.vocab['id'])
-        self.pi_i = np.ones_like((inputs)) * epsilon + self.__rel_probs
+        self.pi_i = np.ones_like((inputs)) * self.epsilon + self.__rel_probs
 
     def print_progress(self, progress, order, width = 100):
         bars = '*' * int(progress * width)
@@ -70,16 +75,16 @@ class MarkovModel:
             print('\n')
 
 
-    def train_n_order(self, sequence, order, epsilon):
+    def train_n_order(self, sequence, order):
         self.A_ij.update({order:dict()})
         inputs = len(self.__vocab[f'w2id{order}'])
         for num, (w, id) in enumerate(self.__vocab[f'w2id{order}'].items()):
-            sparse_dict = self.calc_freqs_for_word(w, sequence, order, epsilon)
+            sparse_dict = self.calc_freqs_for_word(w, sequence, order)
             if len(sparse_dict) > 0:
                 self.A_ij[order].update({id : sparse_dict})
             self.print_progress((num + 1) / inputs, order)
 
-    def train(self, sequences, orders, epsilon = 1e-10):
+    def train(self, sequences, orders):
         allsequences = []
         for line in sequences: 
             for word in line.split():
@@ -91,11 +96,11 @@ class MarkovModel:
         allsequences = np.array(allsequences)
 
         self.setup_vocab(allsequences)
-        self.train_frequency_probabilites(epsilon)
+        self.train_frequency_probabilites()
         
         for order in orders:
             self.setup_n_order_vocab(sequences = allsequences, order = order)
-            self.train_n_order(allsequences, order = order, epsilon = epsilon)
+            self.train_n_order(allsequences, order = order)
 
     def __len__(self):
         return self.__overall_length
@@ -117,6 +122,10 @@ class MarkovModel:
     
     def sample_word(self,order, in_id):
         p = random.random()
+        if p <= self.epsilon: # Case, when very low values are accepted, we randomly choose something
+            out_word = random.choice(list(self.vocab['id'].values()))
+            return out_word
+
         sortedwords = sorted(self.A_ij[order][in_id].items(), key = lambda m: m[1], reverse = True)
         out_id = sortedwords[-1][0] # default value
         for (iid, prob) in sortedwords:
@@ -143,8 +152,8 @@ if __name__ == '__main__':
     with open('texts.txt','r',encoding='utf8') as f:
         texts = [line for line in f.read().split('\n') if len(line.strip())]
     
-    mm = MarkovModel('mm1.dat')
+    mm = MarkovModel('mm1.dat', epsilon = 1e-02)
     #mm.train(texts, orders = [1,2,3,4])
     #mm.save('mm1.dat')
 
-    print(mm('Warum', order = 1, nsteps = 100))
+    print(mm('Warum', order = 4, nsteps = 20))
