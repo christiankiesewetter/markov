@@ -152,8 +152,8 @@ if __name__ == '__main__':
     with open('texts.txt','r',encoding='utf8') as f:
         texts = [line for line in f.read().split('\n') if len(line.strip())]
     
-    mm = MarkovModel('mm1.dat', epsilon = 1e-02)
+    mm = MarkovModel('mm1.dat', epsilon = 1e-03)
     #mm.train(texts, orders = [1,2,3,4])
     #mm.save('mm1.dat')
 
-    print(mm('Warum', order = 4, nsteps = 20))
+    print(mm('Warum', order = 4, nsteps = 200))
