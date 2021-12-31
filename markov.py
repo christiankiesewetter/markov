@@ -4,8 +4,11 @@ import pickle
 import random
 from itertools import product
 import numpy as np
+from collections import namedtuple
 
 unchar = re.compile(r'[,.\-;:_#\'+*?!"&%$§"()]')
+
+ProbSeq = namedtuple('ProbSequence', 'step prob order')
 
 class MarkovModel:
     __vocab = dict()
@@ -45,7 +48,7 @@ class MarkovModel:
         
         words, counts = np.unique(seq[picks], return_counts=True)
         words = np.array([self.vocab['word'][w] for w in words])
-        freq = np.log(counts  + self.epsilon / counts.sum())
+        freq = counts / (counts.sum() + self.epsilon)
         return dict(zip(words, freq))
 
     def setup_n_order_vocab(self, sequences, order):
@@ -126,7 +129,7 @@ class MarkovModel:
             out_word = random.choice(list(self.vocab['id'].values()))
             return out_word
 
-        sortedwords = sorted(self.A_ij[order][in_id].items(), key = lambda m: m[1], reverse = True)
+        sortedwords = sorted(self.A_ij[order][in_id].items(), key = lambda m: np.log(m[1]), reverse = True)
         out_id = sortedwords[-1][0] # default value
         for (iid, prob) in sortedwords:
             if prob >= p:
@@ -134,7 +137,7 @@ class MarkovModel:
                 break
         return self.vocab['id'][out_id]
 
-    def __call__(self, begin, order, nsteps = 10):
+    def generate(self, begin, order, nsteps = 10):
         seq = begin.lower().split(' ')
         wkey = ' '.join(seq[-order:])
         in_id, curr_order = self.next_id(order, wkey)
@@ -146,6 +149,32 @@ class MarkovModel:
             in_id, curr_order = self.next_id(order, wkey)
 
         return ' '.join(seq)
+    
+
+    def __call__(self, sequence, order):
+        '''
+        Calculates the probability of the occuring sequence.
+        '''
+        seq = sequence.lower().split(' ')
+        prob_sequence = []
+        for step in range(1, len(seq)):
+            curr_order = min(step, order)
+            w_i = ' '.join(seq[step-curr_order:step])
+            w_j = seq[step]
+
+            order_dep_id_w_i = self.__vocab[f'w2id{curr_order}'][w_i]
+            order_dep_id_w_j = self.vocab['word'][w_j]
+
+            if order_dep_id_w_i in self.A_ij[curr_order] \
+                and order_dep_id_w_j in self.A_ij[curr_order][order_dep_id_w_i]:
+                    prob = self.A_ij[curr_order][order_dep_id_w_i][order_dep_id_w_j]
+            else:
+                prob = self.epsilon
+
+            prob_sequence.append(ProbSeq(step, prob, curr_order))
+        
+        return np.prod([a.prob for a in prob_sequence])
+
 
 
 if __name__ == '__main__':
@@ -156,4 +185,5 @@ if __name__ == '__main__':
     #mm.train(texts, orders = [1,2,3,4])
     #mm.save('mm1.dat')
 
-    print(mm('Warum', order = 4, nsteps = 200))
+    print(mm.generate('Kirschen', order = 4, nsteps = 50))
+    print(mm('und dann', order = 1))
