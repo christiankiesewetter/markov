@@ -1,20 +1,37 @@
-import numpy as np
+import os
+import re
+import pickle
 import random
 from itertools import product
-import re
+import numpy as np
 
 unchar = re.compile(r'[,.\-;:_#\'+*?!"&%$§"()]')
 
 class MarkovModel:
-    config = dict()
     __vocab = dict()
     A_ij = dict()
-    __overall_length = 0
     vocab = dict()
+    __overall_length = 0
     
-    def __init__(self, **kwargs):
-        self.config.update(kwargs)
-    
+    def __init__(self, model_path = None):
+        if not None is model_path and os.path.isfile(model_path):
+            with open(model_path, 'rb') as mfile:
+                model = pickle.load(mfile)
+                self.A_ij = model['Aij']
+                self.__vocab = model['internal_vocab'] 
+                self.vocab = model['external_vocab']
+                print('model loaded')
+
+    def save(self, model_path = None):
+        with open(file = f'{model_path}', mode = 'wb') as mfile:
+            model = dict(
+                Aij = self.A_ij,
+                internal_vocab = self.__vocab,
+                external_vocab = self.vocab
+            )
+            pickle.dump(model, mfile)
+            print('model stored')
+        
     def calc_freqs_for_word(self, word, seq, order, epsilon):
         picks = np.array([False for _ in range(len(seq))])
         for pos in range(0, len(seq)-order):
@@ -86,7 +103,7 @@ class MarkovModel:
 
     def __call__(self, begin, order, nsteps = 10):
         seq = begin.lower().split(' ')
-        wkey = ' '.join(seq[:order])
+        wkey = ' '.join(seq[-order:])
         if wkey in self.__vocab[f'w2id{order}']:
             in_id = self.__vocab[f'w2id{order}'][wkey]
         else:
@@ -95,17 +112,24 @@ class MarkovModel:
         for step in range(nsteps):
             out_id = sorted(self.A_ij[order][in_id].items(), key = lambda m: m[1])[0][0]
             seq.append(self.vocab['id'][out_id])
-            in_id = self.__vocab[f'w2id{order}'][' '.join(seq[step+1:step+order+1])]
+            wkey = ' '.join(seq[step+1:step+order+1])
+            if wkey in self.__vocab[f'w2id{order}']:
+                in_id = self.__vocab[f'w2id{order}'][wkey]
+            else:
+                in_id = int(random.random() * len(self.__vocab[f'w2id{order}']))
+            
 
         return ' '.join(seq)
 
 
-
 if __name__ == '__main__':
-    with open('texts2.txt','r',encoding='utf8') as f:
+    with open('texts.txt','r',encoding='utf8') as f:
         texts = [line for line in f.read().split('\n') if len(line.strip())]
-    mm = MarkovModel()
-    mm.train(texts, orders = [1, 2])
     
-    print(mm('es waren', order = 1, nsteps = 30))
-    print(mm('es waren', order = 2, nsteps = 30))
+    mm = MarkovModel('mm1.dat')
+    mm.train(texts, orders = [1,2,3,4])
+    mm.save('mm1.dat')
+
+    #res = mm('bloß', order = 1, nsteps = 1)
+    #res = mm(res, order = 2, nsteps = 1)
+    #print(mm(res, order = 3, nsteps = 1))
