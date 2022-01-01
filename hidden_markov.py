@@ -120,46 +120,36 @@ class MarkovModel:
         curr_order = order
         curr_wkey = wkey
 
-        while curr_order > 0 and not curr_wkey in self.__vocab[f'w2id{curr_order}']:
+        while not curr_wkey in self.__vocab[f'w2id{curr_order}'] and curr_order > 0:
             curr_order -= 1
             curr_wkey = ' '.join(curr_wkey.split(' ')[-curr_order:])
 
         if curr_order > 0:
             in_id = self.__vocab[f'w2id{curr_order}'][curr_wkey]
         else:
-            in_id = self.process_sample([(self.vocab['word'][k], v) for k,v in self.pi_i.items()])
+            in_id = int(random.random() * len(self.__vocab[f'w2id1']))
         
         return in_id, curr_order
     
-
-    def process_sample(self, sampleitems):
+    def sample_word(self,order, in_id):
         p = random.random()
         if p <= self.epsilon: # Case, when very low values are accepted, we randomly choose something
             out_word = random.choice(list(self.vocab['id'].values()))
             return out_word
-        
-        sortedwords = sorted(sampleitems, key = lambda m: np.log(m[1]), reverse = True)
+
+        sortedwords = sorted(self.A_ij[order][in_id].items(), key = lambda m: np.log(m[1]), reverse = True)
         out_id = sortedwords[-1][0] # default value
         for (iid, prob) in sortedwords:
             if prob >= p:
                 out_id = iid
                 break
-        return out_id
-
-
-    def sample_word(self, order, in_id):
-        out_id = self.process_sample(self.A_ij[order][in_id].items())
         return self.vocab['id'][out_id]
-
 
     def generate(self, begin, order, nsteps = 10):
         seq = begin.lower().split(' ')
         wkey = ' '.join(seq[-order:])
         in_id, curr_order = self.next_id(order, wkey)
-        if curr_order == 0:
-            curr_order = 1
-            seq.append(self.vocab['id'][in_id])
-
+        
         for step in range(nsteps):
             next_word = self.sample_word(curr_order, in_id)
             seq.append(next_word)
@@ -203,5 +193,5 @@ if __name__ == '__main__':
     #mm.train(texts, orders = [1,2])
     #mm.save('mm1.dat')
 
-    print(mm.generate('', order = 4, nsteps = 50))
-    print(mm('es waren zweiundzwanzig', order = 2)[0])
+    print(mm.generate('Es waren', order = 4, nsteps = 50))
+    print(mm('es waren zweiundzwanzig mark und faltete', order = 2)[0])
