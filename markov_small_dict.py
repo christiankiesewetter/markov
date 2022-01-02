@@ -176,8 +176,10 @@ class MarkovModel:
         prob_sequences = []
         for sequence in sequences:
             seq = sequence.lower().split(' ')
-
             startProb = self.pi_i[self.__vocab['w2id1'].get(seq[0].lower().strip(), '<UNK>')]
+            if startProb == 0:
+                startProb = self.epsilon
+            
             prob_sequence = [ProbSeq(0, startProb, 0)] # initialize
             for step in range(1, len(seq)):
                 curr_order = min(step, order)
@@ -186,13 +188,11 @@ class MarkovModel:
 
                 order_dep_id_w_i = self.__vocab[f'w2id{curr_order}'].get(w_i, '<UNK>')
                 order_dep_id_w_j = self.__vocab[f'w2id1'][w_j]
-
+                prob = self.epsilon
                 if order_dep_id_w_i in self.A_ij[curr_order] \
                     and order_dep_id_w_j in self.A_ij[curr_order][order_dep_id_w_i]:
                         prob = self.A_ij[curr_order][order_dep_id_w_i][order_dep_id_w_j]
-                else:
-                    prob = self.epsilon
-
+ 
                 prob_sequence.append(ProbSeq(step, prob, curr_order))
             prob_sequences.append(prob_sequence)
         return prob_sequences
