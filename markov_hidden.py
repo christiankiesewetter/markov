@@ -190,7 +190,7 @@ class MarkovModel:
             w_j = seq[step]
 
             order_dep_id_w_i = self.__vocab[f'w2id{curr_order}'][w_i]
-            order_dep_id_w_j = self.vocab['word'][w_j]
+            order_dep_id_w_j = self.__vocab['word'][w_j]
 
             if order_dep_id_w_i in self.A_ij[curr_order] \
                 and order_dep_id_w_j in self.A_ij[curr_order][order_dep_id_w_i]:

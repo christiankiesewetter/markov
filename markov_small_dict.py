@@ -24,7 +24,7 @@ class MarkovModel:
             with open(model_path, 'rb') as mfile:
                 model = pickle.load(mfile)
                 self.A_ij = model['Aij']
-                self.__vocab = model['internal_vocab']
+                self.__vocab = model['vocab']
                 self.pi_i = model['pi_i']
                 print('model loaded')
 
@@ -36,7 +36,7 @@ class MarkovModel:
         with open(file = f'{model_path}', mode = 'wb') as mfile:
             model = dict(
                 Aij = self.A_ij,
-                internal_vocab = self.__vocab,
+                vocab = self.__vocab,
                 pi_i = self.pi_i)
             pickle.dump(model, mfile)
             print('model stored')
@@ -45,13 +45,6 @@ class MarkovModel:
     ################################################
     ##          Vocabulary Building Task          ##
     ################################################
-    def tokenize(self, sequences):
-        tokenized_sequences = []
-        for sequence in sequences:
-            cleaned_sequence = unchar.sub(r'', sequence).lower().split()
-            tokenized_sequence = [self.__vocab['w2id1'][w] for w in cleaned_sequence]
-            tokenized_sequences.append(tokenized_sequence)
-        return tokenized_sequences
 
     def calc_outgoing_freqs_for_word(self, word, seq, order):
         picks = np.array([False for _ in range(len(seq))])
@@ -66,6 +59,7 @@ class MarkovModel:
 
     def setup_n_order_vocab(self, sequences, order):
         words = set((' '.join(sequence[pos:pos+order]) for sequence in sequences for pos in range(len(sequence) - order + 1)))
+        words.add('<UNK>')
         id2w = dict(enumerate(words))
         w2id = {w:id for id, w in id2w.items()}
         self.__vocab.update({
@@ -124,7 +118,7 @@ class MarkovModel:
     ##############################################
     ##                 Inference                ##
     ##############################################
-    
+
     def next_id(self, order, wkey):
         curr_order = order
         curr_wkey = wkey
@@ -175,40 +169,45 @@ class MarkovModel:
         return ' '.join(seq)
     
 
-    def probability_for_sequence(self, sequence, order):
+    def probability_for_sequence(self, sequences, order):
         '''
         Calculates the probability of the occuring sequence.
         '''
-        seq = sequence.lower().split(' ')
-        prob_sequence = [ProbSeq(0, self.pi_i[seq[0].lower().strip()], 0)] # initialize
-        for step in range(1, len(seq)):
-            curr_order = min(step, order)
-            w_i = ' '.join(seq[step-curr_order:step])
-            w_j = seq[step]
+        prob_sequences = []
+        for sequence in sequences:
+            seq = sequence.lower().split(' ')
 
-            order_dep_id_w_i = self.__vocab[f'w2id{curr_order}'][w_i]
-            order_dep_id_w_j = self.vocab['word'][w_j]
+            startProb = self.pi_i[self.__vocab['w2id1'].get(seq[0].lower().strip(), '<UNK>')]
+            prob_sequence = [ProbSeq(0, startProb, 0)] # initialize
+            for step in range(1, len(seq)):
+                curr_order = min(step, order)
+                w_i = ' '.join(seq[step-curr_order:step])
+                w_j = seq[step]
 
-            if order_dep_id_w_i in self.A_ij[curr_order] \
-                and order_dep_id_w_j in self.A_ij[curr_order][order_dep_id_w_i]:
-                    prob = self.A_ij[curr_order][order_dep_id_w_i][order_dep_id_w_j]
-            else:
-                prob = self.epsilon
+                order_dep_id_w_i = self.__vocab[f'w2id{curr_order}'].get(w_i, '<UNK>')
+                order_dep_id_w_j = self.__vocab[f'w2id1'][w_j]
 
-            prob_sequence.append(ProbSeq(step, prob, curr_order))
-        
-        return prob_sequence
+                if order_dep_id_w_i in self.A_ij[curr_order] \
+                    and order_dep_id_w_j in self.A_ij[curr_order][order_dep_id_w_i]:
+                        prob = self.A_ij[curr_order][order_dep_id_w_i][order_dep_id_w_j]
+                else:
+                    prob = self.epsilon
+
+                prob_sequence.append(ProbSeq(step, prob, curr_order))
+            prob_sequences.append(prob_sequence)
+        return prob_sequences
 
 
-    def __call__(self, sequence, order):
-        prob_sequence = self.probability_for_sequence(sequence, order)
-        return np.prod([a.prob for a in prob_sequence])
+    def __call__(self, sequences, order):
+        prob_sequences = self.probability_for_sequence(sequences, order)
+        return np.prod([a.prob for a in prob_sequences[0]])
 
 
 if __name__ == '__main__':
     with open('texts2.txt','r',encoding='utf8') as f:
         texts = [line for line in f.read().split('\n') if len(line.strip())]
     
-    mm = MarkovModel(epsilon = 1e-03)
-    mm.train(texts, orders = [1,2,3])
-    mm.save('hmm1.dat')
+    mm = MarkovModel('hmm1.dat',epsilon = 1e-03)
+    #mm.train(texts, orders = [1,2])
+    #mm.save('hmm1.dat')
+    print(mm(sequences = ['Es waren'], order = 1))
