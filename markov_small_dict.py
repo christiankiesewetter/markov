@@ -109,8 +109,11 @@ class MarkovModel:
         for order in orders:
             self.setup_n_order_vocab(sequences = all_sequences, order = order)
             self.train_n_order(sequences = all_sequences, order = order)
+        
         self.pi_i = np.zeros(len(self.__vocab['w2id1']))
-
+        for seq in all_sequences:
+            iid = self.__vocab['w2id1'][seq[0]]
+            self.pi_i[iid] += 1 / len(all_sequences)
 
     def __len__(self):
         return self.__overall_length
