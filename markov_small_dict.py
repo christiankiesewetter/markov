@@ -211,6 +211,6 @@ if __name__ == '__main__':
         texts = [line for line in f.read().split('\n') if len(line.strip())]
     
     mm = MarkovModel('hmm1.dat',epsilon = 1e-03)
-    #mm.train(texts, orders = [1,2])
-    #mm.save('hmm1.dat')
+    mm.train(texts, orders = [1, 2])
+    mm.save('hmm1.dat')
     print(mm(sequences = ['Es waren'], order = 1))

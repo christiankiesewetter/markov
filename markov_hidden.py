@@ -1,197 +1,146 @@
-import os
-import re
+from preprocessor import Preprocessor
+import numpy as np
 import pickle
-import random
-from itertools import product
-import tensorflow as tf
-from tensorflow.keras.models import Model
-from collections import namedtuple
 
-unchar = re.compile(r'[,.\-;:_#\'+*?!"&%$§"()]')
+class MarkovModel:
+    '''
+    t ... timestep
+    z ... hidden states
+    i, j... hidden state transitions
+    k ... target_symbol
 
-ProbSeq = namedtuple('ProbSequence', 'step prob order')
-
-class MarkovModel(Model):
-
-    def setup_variables(self,):
-        self.pi_i = tf.constant()
-        self.A_ij = tf.Variable()
-        self.B_jk = tf.Variable()
-
-
-    def setup_vocabs(self, sequences, orders):
-        all_sequences = self.clean_sequences(sequences)
-        for order in orders:
-            self.setup_n_order_vocab(sequences = all_sequences, order = order)
-        self.pi_i = tf.zeros(len(self.__vocab['w2id1']))
-
-    ################################################
-    ## initializing and storing, retrieving model ##
-    ################################################
-    def __init__(self, hidden_states = None, sequences = None):
-        self.setup_vocabs()
-        self.epsilon = 1e-10
-
-    ################################################
-    ##          Vocabulary Building Task          ##
-    ################################################
-
-    def calc_outgoing_freqs_for_word(self, word, seq, order):
-        picks = np.array([False for _ in range(len(seq))])
-        for pos in range(0, len(seq)-order):
-            if ' '.join(seq[pos:pos+order]) == word:
-                picks[pos+order] = True
+    '''
+    def __init__(self, hidden_states, target_symbols):
+        self.vocab = target_symbols
+        self.voc_length = len(self.vocab)
+        self.hid_length = hidden_states
         
-        words, counts = np.unique(np.array(seq)[picks], return_counts=True)
-        words = np.array([self.__vocab['w2id1'][w] for w in words])
-        freq = counts / (counts.sum() + self.epsilon)
-        return tuple(zip(words, freq))
+        self.psi = {}
 
-    def setup_n_order_vocab(self, sequences, order):
-        words = set((' '.join(sequence[pos:pos+order]) for sequence in sequences for pos in range(len(sequence) - order + 1)))
-        words.add('<UNK>')
-        id2w = dict(enumerate(words))
-        w2id = {w:id for id, w in id2w.items()}
-        self.__vocab.update({
-            f'id2w{order}' : id2w,
-            f'w2id{order}' : w2id
-        })
+        self.pii = np.ones((self.hid_length)) / self.hid_length
+        
+        self.Aij = np.random.random((self.hid_length, self.hid_length))
+        self.Aij = self.Aij / self.Aij.sum(axis=0)
 
-    def setup_external_vocab(self, allsequences):
-        words, counts = np.unique(allsequences, return_counts=True)
-        self.__overall_length = counts.sum()
-        self.__word_frequency = counts/self.__overall_length
-        self.vocab['id'] = dict(enumerate(words))
-        self.vocab['word'] = {v:k for k,v in self.vocab['id'].items()}
+        self.Bjk = np.random.random((self.hid_length, self.voc_length))
+        self.Bjk = self.Bjk / self.Bjk.sum(axis=0)
 
-    ##############################################
-    ##              Training Tasks              ##
-    ##############################################
-    def print_progress(self, progress, order, width = 100):
+
+    def print_progress(self, progress, text, width = 100):
         bars = '*' * int(progress * width)
-        print(f'{bars: <{width}} {progress * 100:.2f}%, order {order}', end='\r')
+        print(f'{bars: <{width}} {progress * 100:.2f}%, {text}', end='\r')
         if progress == 1:
             print('\n')
 
-    def clean_sequences(self, sequences):
-        allsequences = []
-        for line in sequences:
-            truncated_line = line.strip()
-            if len(truncated_line)>0:
-                splitline = unchar.sub(r'', truncated_line.lower()).split()
-                allsequences.append(splitline)
-        return allsequences
 
+    def fwd_bckwd_probs_observing_O(self, seq):
+        seq_len = len(seq)
+        forward_prob = np.zeros((seq_len, self.hid_length), dtype='float32')
+        backward_prob = np.zeros((seq_len, self.hid_length), dtype='float32')
 
-    def train_n_order(self, sequences, order):
-        inputs = len(self.__vocab[f'w2id{order}'])
-        outputs = len(self.__vocab[f'w2id1'])
-        self.A_ij.update({order:np.zeros(shape = (inputs, outputs))})
-        for num, (w, id) in enumerate(self.__vocab[f'w2id{order}'].items()):
-            for sequence in sequences:
-                sparse_outgoing_dict = self.calc_outgoing_freqs_for_word(w, sequence, order)
-                for word_id, freq in sparse_outgoing_dict:
-                    self.A_ij[order][self.__vocab[f'w2id{order}'][w],word_id] = freq / len(sequences)
-            self.print_progress((num + 1) / inputs, order)
+        forward_prob[0] = self.pii * self.Bjk[:,seq[0]]
+        backward_prob[-1] = np.ones(self.hid_length)
 
+        for t in range(1, seq_len):
+            obs_in_t = seq[t]
+            obs_in_t_next = seq[-t]
 
-
-    def __len__(self):
-        return self.__overall_length
-    
-    ##############################################
-    ##                 Inference                ##
-    ##############################################
-
-    def next_id(self, order, wkey):
-        curr_order = order
-        curr_wkey = wkey
-        while curr_order > 0 and not curr_wkey in self.__vocab[f'w2id{curr_order}']:
-            curr_order -= 1
-            curr_wkey = ' '.join(curr_wkey.split(' ')[-curr_order:])
-
-        if curr_order > 0:
-            in_id = self.__vocab[f'w2id{curr_order}'][curr_wkey]
-        else:
-            in_id = self.process_sample([(self.vocab['word'][k], v) for k,v in self.pi_i.items()])
-        return in_id, curr_order
-
-    def process_sample(self, sampleitems):
-        p = random.random()
-        if p <= self.epsilon: # Case, when very low values are accepted, we randomly choose something
-            out_word = random.choice(list(self.vocab['id'].values()))
-            return out_word
+            forward_prob[t] = (forward_prob[t-1] * self.Aij[:,:]) @ self.Bjk[:,obs_in_t]
+            backward_prob[-t-1] = (self.Aij @ self.Bjk[:,obs_in_t_next]) * backward_prob[-t]
         
-        sortedwords = sorted(sampleitems, key = lambda m: np.log(m[1]), reverse = True)
-        out_id = sortedwords[-1][0] # default value
-        for (iid, prob) in sortedwords:
-            if prob >= p:
-                out_id = iid
-                break
-        return out_id
+        return forward_prob, backward_prob
 
 
-    def sample_word(self, order, in_id):
-        out_id = self.process_sample(self.A_ij[order][in_id].items())
-        return self.vocab['id'][out_id]
+    def viterbi_gamma(self, seq, alpha, beta):
+        seq_len = len(alpha)
+        gamma = np.zeros((seq_len, self.hid_length), dtype='float32')
+        xi = np.zeros((seq_len, self.hid_length, self.hid_length), dtype='float32')
+        for t in range(seq_len):
+            gamma[t] = (alpha[t] * beta[t]) / (alpha * beta + 1e-17).sum()
+
+            if t == seq_len - 1: break;
+
+            xi_nominator = (alpha[t, :] * self.Aij * self.Bjk[:, seq[t+1]] * beta[t+1,:])
+            xi_denominator = xi_nominator.sum()
+            xi[t] = xi_nominator / (xi_denominator +1e-17)
+
+        return gamma, xi
 
 
-    def generate(self, begin, order, nsteps = 10):
-        seq = begin.lower().split(' ')
-        wkey = ' '.join(seq[-order:])
-        in_id, curr_order = self.next_id(order, wkey)
-        if curr_order == 0:
-            curr_order = 1
-            seq[0] = self.vocab['id'][in_id]
+    def viterbi(self, seq):
+        seq_len = len(seq)
+        delta = np.zeros((seq_len, self.hid_length), dtype='float32')
+        psi = np.zeros((seq_len), dtype='int32')
+        
+        delta[0] = self.pii * self.Bjk[:, seq[0]]
+        psi[0] = 0
 
-        for step in range(nsteps):
-            next_word = self.sample_word(curr_order, in_id)
-            seq.append(next_word)
-            wkey = ' '.join(seq[-order:])
-            in_id, curr_order = self.next_id(order, wkey)
+        for t in range(1, seq_len):
+            observation = seq[t]            
+            delta[t] = np.max(delta[t-1] * self.Aij) * self.Bjk[:,observation]
+            psi[t] = np.argmax(delta[t-1] * self.Aij)
 
-        return ' '.join(seq)
-    
+        return np.max(delta[-1]), np.argmax(delta[-1])
 
-    def probability_for_sequence(self, sequences, order):
-        '''
-        Calculates the probability of the occuring sequence.
-        '''
-        prob_sequences = []
-        for sequence in sequences:
-            seq = sequence.lower().split(' ')
-            startProb = self.pi_i[self.__vocab['w2id1'].get(seq[0].lower().strip(), '<UNK>')]
-            if startProb == 0:
-                startProb = self.epsilon
+
+    def update_params(self, gamma, xi, seq):
+        seq_len = len(gamma)
+
+        pii = gamma[0].copy()
+        Aij = (xi / (1e-17+gamma.sum(axis=1)).reshape(-1,1,1)).sum(axis=0).copy()
+        
+        Bjk = np.zeros((self.hid_length, self.voc_length), dtype='float32')
+        for k in range(self.voc_length):
+            Bjk[:,k] = gamma.sum(axis=0) * (np.sum(np.array(seq) == k) / seq_len)
+        
+        return pii, Aij, Bjk
+
+
+    def train(self, X, epochs=10):
+        nsamples = len(X)
+        
+        for _ in range(epochs):
+            alphas = []
+            betas = []
+            gammas = []
+            xis = []
+            pii = np.zeros((self.hid_length), dtype='float32')
+            Aij = np.zeros((self.hid_length, self.hid_length), dtype='float32')
+            Bjk = np.zeros((self.hid_length, self.voc_length), dtype='float32')
             
-            prob_sequence = [ProbSeq(0, startProb, 0)] # initialize
-            for step in range(1, len(seq)):
-                curr_order = min(step, order)
-                w_i = ' '.join(seq[step-curr_order:step])
-                w_j = seq[step]
+            cost = np.zeros(nsamples, dtype='float32')
 
-                order_dep_id_w_i = self.__vocab[f'w2id{curr_order}'].get(w_i, '<UNK>')
-                order_dep_id_w_j = self.__vocab[f'w2id1'][w_j]
-                prob = self.epsilon
-                if order_dep_id_w_i in self.A_ij[curr_order] \
-                    and order_dep_id_w_j in self.A_ij[curr_order][order_dep_id_w_i]:
-                        prob = self.A_ij[curr_order][order_dep_id_w_i][order_dep_id_w_j]
- 
-                prob_sequence.append(ProbSeq(step, prob, curr_order))
-            prob_sequences.append(prob_sequence)
-        return prob_sequences
+            for n in range(nsamples):
+                # FWD BCKWD
+                alpha, beta = self.fwd_bckwd_probs_observing_O(X[n])
+                gamma, xi  = self.viterbi_gamma(X[n], alpha, beta)
+                alphas.append(alpha)
+                betas.append(beta)
+                gammas.append(gamma)
+                xis.append(xi)
+                cost[n] = alpha[-1].sum()
+                pi, A, B = self.update_params(gamma, xi, X[n])
+                pii = pii + pi
+                Aij = Aij + A
+                Bjk = Bjk + B
+                
+                self.print_progress(((n+1) / nsamples), f'Cost: {cost.sum():.5f}', width = 50)
+            
+            print(cost.sum().round(4))
+
+            self.pii = pii / nsamples
+            self.Aij = Aij / nsamples
+            self.Bjk = Bjk / nsamples
 
 
-    def __call__(self, sequences, order):
-        prob_sequences = self.probability_for_sequence(sequences, order)
-        return np.prod([a.prob for a in prob_sequences[0]])
 
 
 if __name__ == '__main__':
-    with open('texts2.txt','r',encoding='utf8') as f:
+    with open('texts.txt','r',encoding='utf8') as f:
         texts = [line for line in f.read().split('\n') if len(line.strip())]
     
-    mm = MarkovModel('hmm1.dat',epsilon = 1e-03)
-    #mm.train(texts, orders = [1,2])
-    #mm.save('hmm1.dat')
-    print(mm(sequences = ['Es waren'], order = 1))
+    p = Preprocessor()
+    tokenized = p(texts)
+    
+    markov = MarkovModel(hidden_states = 8, target_symbols = p.vocab)
+    markov.train(tokenized)
