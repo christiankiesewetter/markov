@@ -2,6 +2,8 @@ from preprocessor import Preprocessor
 import numpy as np
 import pickle
 
+np.random.seed(42)
+
 class MarkovModel:
     '''
     t ... timestep
@@ -14,8 +16,6 @@ class MarkovModel:
         self.vocab = target_symbols
         self.voc_length = len(self.vocab)
         self.hid_length = hidden_states
-        
-        self.psi = {}
 
         self.pii = np.ones((self.hid_length)) / self.hid_length
         
@@ -31,6 +31,28 @@ class MarkovModel:
         print(f'{bars: <{width}} {progress * 100:.2f}%, {text}', end='\r')
         if progress == 1:
             print('\n')
+
+
+    def save_model(self, fpath = 'hmmd_weights.dat'):
+        with open(file = fpath, mode = 'wb') as mfile:
+            model = dict(
+                pi_i = self.pii,
+                Aij = self.Aij,
+                Bjk = self.Bjk,
+                vocab = self.vocab,
+            )
+            pickle.dump(model, mfile)
+            print('model stored')
+
+
+    def load_model(self, fpath):
+        with open(fpath, 'rb') as mfile:
+                model = pickle.load(mfile)
+                self.Aij = model['Aij'],
+                self.Bij = model['Bij']
+                self.vocab = model['vocab']
+                self.pii = model['pii']
+                print('model restored')
 
 
     def fwd_bckwd_probs_observing_O(self, seq):
@@ -96,9 +118,10 @@ class MarkovModel:
         return pii, Aij, Bjk
 
 
-    def train(self, X, epochs=10):
+    def train(self, X, epochs=20, cost_thresh = 1e-5):
         nsamples = len(X)
-        
+        last_cost = 10000.0
+        wait = 3
         for _ in range(epochs):
             alphas = []
             betas = []
@@ -126,14 +149,21 @@ class MarkovModel:
                 
                 self.print_progress(((n+1) / nsamples), f'Cost: {cost.sum():.5f}', width = 50)
             
-            print(cost.sum().round(4))
-
             self.pii = pii / nsamples
             self.Aij = Aij / nsamples
             self.Bjk = Bjk / nsamples
 
-
-
+            if last_cost - cost.sum() < cost_thresh:
+                print('No improvement...')
+                if wait == 0:
+                    break;
+                wait -=1
+            else:
+                wait = 3
+            
+            last_cost = cost.sum()
+        
+        self.save_model()
 
 if __name__ == '__main__':
     with open('texts.txt','r',encoding='utf8') as f:
