@@ -12,19 +12,21 @@ class MarkovModel:
     k ... target_symbol
 
     '''
-    def __init__(self, hidden_states, target_symbols):
-        self.vocab = target_symbols
-        self.voc_length = len(self.vocab)
-        self.hid_length = hidden_states
+    def __init__(self, hidden_states = None, target_symbols=None, model_path = None):
+        if not None is hidden_states and not None is target_symbols:
+            self.vocab = target_symbols
+            self.voc_length = len(self.vocab)
+            self.hid_length = hidden_states
 
-        self.pii = np.ones((self.hid_length)) / self.hid_length
-        
-        self.Aij = np.random.random((self.hid_length, self.hid_length))
-        self.Aij = self.Aij / self.Aij.sum(axis=0)
+            self.pii = np.ones((self.hid_length)) / self.hid_length
+            
+            self.Aij = np.random.random((self.hid_length, self.hid_length))
+            self.Aij = self.Aij / self.Aij.sum(axis=0)
 
-        self.Bjk = np.random.random((self.hid_length, self.voc_length))
-        self.Bjk = self.Bjk / self.Bjk.sum(axis=0)
-
+            self.Bjk = np.random.random((self.hid_length, self.voc_length))
+            self.Bjk = self.Bjk / self.Bjk.sum(axis=0)
+        else:
+            self.load_model(model_path)
 
     def print_progress(self, progress, text, width = 100):
         bars = '*' * int(progress * width)
@@ -36,7 +38,7 @@ class MarkovModel:
     def save_model(self, fpath = 'hmmd_weights.dat'):
         with open(file = fpath, mode = 'wb') as mfile:
             model = dict(
-                pi_i = self.pii,
+                pii = self.pii,
                 Aij = self.Aij,
                 Bjk = self.Bjk,
                 vocab = self.vocab,
@@ -45,11 +47,11 @@ class MarkovModel:
             print('model stored')
 
 
-    def load_model(self, fpath):
+    def load_model(self, fpath = 'hmmd_weights.dat'):
         with open(fpath, 'rb') as mfile:
                 model = pickle.load(mfile)
                 self.Aij = model['Aij'],
-                self.Bij = model['Bij']
+                self.Bjk = model['Bjk']
                 self.vocab = model['vocab']
                 self.pii = model['pii']
                 print('model restored')
@@ -166,11 +168,11 @@ class MarkovModel:
         self.save_model()
 
 if __name__ == '__main__':
-    with open('texts.txt','r',encoding='utf8') as f:
-        texts = [line for line in f.read().split('\n') if len(line.strip())]
-    
-    p = Preprocessor()
-    tokenized = p(texts)
-    
-    markov = MarkovModel(hidden_states = 8, target_symbols = p.vocab)
-    markov.train(tokenized)
+    #with open('texts.txt','r',encoding='utf8') as f:
+    #    texts = [line for line in f.read().split('\n') if len(line.strip())]
+    #p = Preprocessor()
+    #tokenized = p(texts)
+    #markov = MarkovModel(hidden_states = 8, target_symbols = p.vocab)
+    #markov.train(tokenized)
+
+    markov = MarkovModel(model_path='hmmd_weights.dat')
