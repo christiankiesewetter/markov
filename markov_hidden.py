@@ -80,13 +80,13 @@ class MarkovModel:
         gamma = np.zeros((seq_len, self.hid_length), dtype='float32')
         xi = np.zeros((seq_len, self.hid_length, self.hid_length), dtype='float32')
         for t in range(seq_len):
-            gamma[t] = (alpha[t] * beta[t]) / (alpha * beta + 1e-17).sum()
+            gamma[t] = (alpha[t] * beta[t]) / (alpha * beta + self.epsilon).sum()
 
             if t == seq_len - 1: break;
 
             xi_nominator = (alpha[t, :] * self.Aij * self.Bjk[:, seq[t+1]] * beta[t+1,:])
             xi_denominator = xi_nominator.sum()
-            xi[t] = xi_nominator / (xi_denominator +1e-17)
+            xi[t] = xi_nominator / (xi_denominator + self.epsilon)
 
         return gamma, xi
 
@@ -111,7 +111,7 @@ class MarkovModel:
         seq_len = len(gamma)
 
         pii = gamma[0].copy()
-        Aij = (xi / (1e-17+gamma.sum(axis=1)).reshape(-1,1,1)).sum(axis=0).copy()
+        Aij = (xi / (self.epsilon + gamma.sum(axis=1)).reshape(-1,1,1)).sum(axis=0).copy()
         
         Bjk = np.zeros((self.hid_length, self.voc_length), dtype='float32')
         for k in range(self.voc_length):
@@ -122,8 +122,9 @@ class MarkovModel:
 
     def train(self, X, epochs=20, cost_thresh = 1e-5):
         nsamples = len(X)
-        last_cost = 10000.0
+        last_cost = 0.0
         wait = 3
+        self.epsilon = 1e-17
         for _ in range(epochs):
             alphas = []
             betas = []
@@ -145,18 +146,19 @@ class MarkovModel:
                 xis.append(xi)
                 cost[n] = alpha[-1].sum()
                 pi, A, B = self.update_params(gamma, xi, X[n])
+                
                 pii = pii + pi
                 Aij = Aij + A
                 Bjk = Bjk + B
                 
                 self.print_progress(((n+1) / nsamples), f'Cost: {cost.sum():.5f}', width = 50)
             
-            self.pii = pii / nsamples
-            self.Aij = Aij / nsamples
-            self.Bjk = Bjk / nsamples
+            self.pii = pii / pii.sum(axis=0)
+            self.Aij = (Aij + self.epsilon) / (Aij + self.epsilon).sum(axis=0)
+            self.Bjk = (Bjk + self.epsilon )/ (Bjk + self.epsilon).sum(axis=0)
 
-            if last_cost - cost.sum() < cost_thresh:
-                print('No improvement...')
+            if last_cost - cost.sum() > cost_thresh:
+                print(f'No improvement. Waiting {wait} further epochs')
                 if wait == 0:
                     break;
                 wait -=1
@@ -168,11 +170,11 @@ class MarkovModel:
         self.save_model()
 
 if __name__ == '__main__':
-    #with open('texts.txt','r',encoding='utf8') as f:
-    #    texts = [line for line in f.read().split('\n') if len(line.strip())]
-    #p = Preprocessor()
-    #tokenized = p(texts)
-    #markov = MarkovModel(hidden_states = 8, target_symbols = p.vocab)
-    #markov.train(tokenized)
+    with open('texts.txt','r',encoding='utf8') as f:
+        texts = [line for line in f.read().split('\n') if len(line.strip())]
+    p = Preprocessor()
+    tokenized = p(texts)
+    markov = MarkovModel(hidden_states = 8, target_symbols = p.vocab)
+    markov.train(tokenized)
 
-    markov = MarkovModel(model_path='hmmd_weights.dat')
+    #markov = MarkovModel(model_path='hmmd_weights.dat')
