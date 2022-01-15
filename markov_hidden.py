@@ -122,10 +122,10 @@ class MarkovModel:
 
     def train(self, X, epochs=20, cost_thresh = 1e-5):
         nsamples = len(X)
-        last_cost = 0.0
+        best_cost = 0.0
         wait = 3
         self.epsilon = 1e-17
-        for _ in range(epochs):
+        for epoch in range(epochs):
             alphas = []
             betas = []
             gammas = []
@@ -151,23 +151,23 @@ class MarkovModel:
                 Aij = Aij + A
                 Bjk = Bjk + B
                 
-                self.print_progress(((n+1) / nsamples), f'Cost: {cost.sum():.5f}', width = 50)
+                self.print_progress(((n+1) / nsamples), f'Epoch {epoch} / Cost: {cost.sum():.5f}', width = 50)
             
             self.pii = pii / pii.sum(axis=0)
             self.Aij = (Aij + self.epsilon) / (Aij + self.epsilon).sum(axis=0)
             self.Bjk = (Bjk + self.epsilon )/ (Bjk + self.epsilon).sum(axis=0)
 
-            if last_cost - cost.sum() > cost_thresh:
+            if cost.sum() - best_cost < cost_thresh:
                 print(f'No improvement. Waiting {wait} further epochs')
                 if wait == 0:
                     break;
                 wait -=1
             else:
+                best_cost = cost.sum()
+                self.save_model('hmmd-bestmodel.dat')
                 wait = 3
             
-            last_cost = cost.sum()
         
-        self.save_model()
 
 if __name__ == '__main__':
     with open('texts.txt','r',encoding='utf8') as f:
