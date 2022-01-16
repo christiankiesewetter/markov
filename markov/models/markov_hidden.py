@@ -112,10 +112,12 @@ class MarkovModel:
 
         return np.max(delta[-1]).round(4), np.argmax(delta[-1]), delta, psi
 
+
     def update_params(self, pii, Aij, Bjk):
         self.pii = pii / pii.sum(axis=0)
         self.Aij = (Aij + self.epsilon) / (Aij + self.epsilon).sum(axis=0)
         self.Bjk = (Bjk + self.epsilon) / (Bjk + self.epsilon).sum(axis=0)
+
 
     def calc_new_params(self, gamma, xi, seq):
         seq_len = len(gamma)
@@ -134,7 +136,14 @@ class MarkovModel:
         return pii, Aij, Bjk
 
 
-    def train(self, X, epochs=200, cost_thresh = 1e-05, wait_epochs = 10, batch_update = True):
+    def train(
+        self, X, 
+        epochs,
+        cost_thresh = 1e-05, 
+        wait_epochs = 7, 
+        batch_update = True, 
+        scale = True):
+
         nsamples = len(X)
         best_cost = 0.0
         wait = wait_epochs
@@ -172,7 +181,7 @@ class MarkovModel:
                 else:
                     self.update_params(pi, A, B)
                 
-                self.print_progress(((n+1) / nsamples), f'Epoch {epoch} / Forward Prob: {cost.sum():.5f}', width = 50)
+                self.print_progress(((n+1) / nsamples), f'Epoch {epoch} / Forward Prob: {cost.sum():.2f}', width = 50)
             
             if batch_update:
                 self.update_params(pii, Aij, Bjk)
@@ -197,4 +206,4 @@ if __name__ == '__main__':
     len(tokenized)
 
     markov = MarkovModel(hidden_states = 4, vocab = p.w2id)
-    markov.train(tokenized)
+    markov.train(tokenized, epochs = 100)
