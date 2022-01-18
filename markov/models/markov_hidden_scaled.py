@@ -2,7 +2,7 @@ import numpy as np
 import pickle
 from utils.preprocessor import Preprocessor
 import json
-np.random.seed(42)
+
 
 class MarkovModel:
     '''
@@ -111,8 +111,12 @@ class MarkovModel:
 
     def update_params(self, pii, Aij, Bjk):
         self.pii = pii / pii.sum()
-        self.Aij = Aij / (Aij + self.epsilon).sum(axis=1)[:,np.newaxis]
-        self.Bjk = Bjk / (Bjk + self.epsilon).sum(axis=1)[:,np.newaxis]
+
+        Aij = Aij * self.lr + self.Aij
+        Bjk = Bjk * self.lr + self.Bjk
+
+        self.Aij = (Aij.T / (Aij.sum(axis=1) + self.epsilon)).T
+        self.Bjk = (Bjk.T / (Bjk.sum(axis=1) + self.epsilon)).T
 
 
     def calc_new_params(self, gamma, xi, seq):
@@ -129,12 +133,15 @@ class MarkovModel:
         cost_thresh = 1e-08, 
         wait_epochs = 7, 
         batch_update = False,
+        lr = 0.1,
         model_path = 'hmmd-bestmodel.dat'):
 
         nsamples = len(X)
         best_cost = 0.0
         wait = wait_epochs
         self.epsilon = 0.0
+        self.lr = lr
+        randomize = 3
 
         self.eye = np.eye(self.voc_length)
 
@@ -151,6 +158,7 @@ class MarkovModel:
 
             for n in range(nsamples):
                 sample = X[n]
+                seq_len = len(sample)
                 # FWD BCKWD
                 alpha, beta = self.forward_backward(sample)
                 c = np.expand_dims(alpha.sum(axis=1) + self.epsilon, axis=1)
@@ -168,7 +176,7 @@ class MarkovModel:
     
                 if batch_update:
                     pii = pii + (pi / nsamples)
-                    Aij = Aij + (A / nsamples) 
+                    Aij = Aij + (A / nsamples)
                     Bjk = Bjk + (B / nsamples)
                 else:
                     self.update_params(pi, A, B)
@@ -180,6 +188,14 @@ class MarkovModel:
 
             if cost.sum() - best_cost < cost_thresh:
                 print(f'No improvement. Waiting {wait} further epochs')
+                
+                if wait == 2:
+                    # add some randomness, if no improvement can be found... 
+                    # just to make sure... modifiy two numbers
+                    for _ in range(min(randomize, self.hid_length)):
+                        p1, p2 = np.random.randint(0, self.hid_length, size=2)
+                        self.Aij[p1, p2] += np.random.random(1) - 0.5
+                        self.update_params(self.pii, self.Aij, self.Bjk)
                 if wait == 0:
                     break;
                 wait -=1
@@ -193,7 +209,8 @@ class MarkovModel:
 if __name__ == '__main__':
     #with open('examples/texts.txt','r',encoding='utf8') as f:
     #    texts = [line for line in f.read().split('\n') if len(line.strip())]
-    
+    np.random.seed(42)
+
     with open('examples/coin_flip.txt','r',encoding='utf8') as f:
         texts = [' '.join(list(line.strip())) for line in f]
     
@@ -206,9 +223,11 @@ if __name__ == '__main__':
         tokenized, 
         epochs = 100, 
         batch_update = True, 
+        lr = 0.3,
         model_path='hmmd-scaled.dat')
 
     print(p.vocab)
     print(markov.vocab)
+    print('pii', markov.pii.round(2))
     print('A', markov.Aij.round(2))
     print('B', markov.Bjk.round(2))
