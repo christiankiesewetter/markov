@@ -130,10 +130,11 @@ class MarkovModel:
     def train(
         self, X, 
         epochs,
-        cost_thresh = 1e-08, 
+        cost_thresh = 1e-05, 
         wait_epochs = 7, 
         batch_update = False,
         lr = 0.1,
+        randomize = 0,
         model_path = 'hmmd-bestmodel.dat'):
 
         nsamples = len(X)
@@ -141,7 +142,7 @@ class MarkovModel:
         wait = wait_epochs
         self.epsilon = 0.0
         self.lr = lr
-        randomize = 3
+        self.randomize = randomize
 
         self.eye = np.eye(self.voc_length)
 
@@ -186,15 +187,15 @@ class MarkovModel:
             if batch_update:
                 self.update_params(pii, Aij, Bjk)
 
-            if cost.sum() - best_cost < cost_thresh:
+            if cost.sum() - best_cost <= cost_thresh:
                 print(f'No improvement. Waiting {wait} further epochs')
                 
-                if wait == 2:
+                if int(wait_epochs - wait) in list(range(int(wait_epochs/2))):
                     # add some randomness, if no improvement can be found... 
                     # just to make sure... modifiy two numbers
-                    for _ in range(min(randomize, self.hid_length)):
+                    for _ in range(min(self.randomize, self.hid_length**2)):
                         p1, p2 = np.random.randint(0, self.hid_length, size=2)
-                        self.Aij[p1, p2] += np.random.random(1) - 0.5
+                        self.Aij[p1, p2] += np.clip(np.random.random(1)*2 - 1.0, a_min=0.0, a_max=1.0)
                         self.update_params(self.pii, self.Aij, self.Bjk)
                 if wait == 0:
                     break;
@@ -207,23 +208,26 @@ class MarkovModel:
         
 
 if __name__ == '__main__':
-    #with open('examples/texts.txt','r',encoding='utf8') as f:
-    #    texts = [line for line in f.read().split('\n') if len(line.strip())]
+    with open('examples/texts.txt','r',encoding='utf8') as f:
+        texts = [line for line in f.read().split('\n') if len(line.strip())]
     np.random.seed(42)
 
-    with open('examples/coin_flip.txt','r',encoding='utf8') as f:
-        texts = [' '.join(list(line.strip())) for line in f]
+    #with open('examples/coin_flip.txt','r',encoding='utf8') as f:
+    #    texts = [' '.join(list(line.strip())) for line in f]
     
     p = Preprocessor()
     tokenized = p(texts)
     len(tokenized)
 
-    markov = MarkovModel(hidden_states = 2, vocab = p.w2id)
+    markov = MarkovModel(hidden_states = 8, vocab = p.w2id)
     markov.train(
         tokenized, 
         epochs = 100, 
         batch_update = True, 
         lr = 0.3,
+        wait_epochs = 30,
+        cost_thresh = 1e-05,
+        randomize = 30,
         model_path='hmmd-scaled.dat')
 
     print(p.vocab)
