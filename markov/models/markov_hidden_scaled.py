@@ -73,7 +73,9 @@ class MarkovModel:
 
         for t in range(1, seq_len):
             alpha[t] = (alpha[t-1] * self.Aij.T).T @ self.Bjk[:, seq[t]]
+            alpha[t] /= alpha[t].sum()
             beta[-t-1] = (beta[-t] * self.Aij.T).T @ self.Bjk[:, seq[-t]]
+            beta[-t-1] /= beta[-t-1].sum()
         
         return alpha, beta
 
@@ -84,9 +86,8 @@ class MarkovModel:
         
         rseq = np.roll(seq, shift=-1)
         rbeta = np.roll(beta, shift = -1, axis=0)
-        xi_nominator = (alpha[:,:,np.newaxis] * self.Aij) * (self.Bjk[:, rseq]*rbeta.T).T[:,np.newaxis,:] + self.epsilon
-
-        xi = (xi_nominator.T / xi_nominator.sum(axis=1).sum(axis=1)[:,np.newaxis].T).T
+        xi_nominator = (alpha[:,:,np.newaxis] * self.Aij) * (self.Bjk[:, rseq]*rbeta.T).T[:,np.newaxis,:]
+        xi = (xi_nominator.T / (xi_nominator.sum(axis=1).sum(axis=1)[:,np.newaxis].T + self.epsilon)).T
         gamma = (alpha * beta)
 
         return gamma, xi
@@ -110,36 +111,22 @@ class MarkovModel:
 
     def update_params(self, pii, Aij, Bjk):
         self.pii = pii / pii.sum()
-        self.Aij = (Aij / Aij.sum(axis=1)[:,np.newaxis])
-        self.Bjk = (Bjk / Bjk.sum(axis=1)[:,np.newaxis])
+        self.Aij = Aij / (Aij + self.epsilon).sum(axis=1)[:,np.newaxis]
+        self.Bjk = Bjk / (Bjk + self.epsilon).sum(axis=1)[:,np.newaxis]
 
 
     def calc_new_params(self, gamma, xi, seq):
-        seq_len = len(gamma)
-
         pii = gamma[0].copy()
-        Aij = np.zeros((self.hid_length, self.hid_length))
-        
-        for i in range(self.hid_length):
-            for j in range(self.hid_length):
-                Aij[i,j] += (xi[:,i,j] + self.epsilon).sum() / (gamma[:-1, i] + self.epsilon).sum()
-
-        Bjk = np.zeros((self.hid_length, self.voc_length), dtype=self.overall_dtype)
-
-        for t in range(seq_len):
-            for k in range(self.voc_length):
-                for j in range(self.hid_length):
-                    Bjk[j,k] += gamma[t, j] if seq[t] == k else 0
-        
-        Bjk = Bjk + self.epsilon
-        Bjk = (Bjk  / Bjk.sum(axis=1).T[:,np.newaxis])
+        Aij = (xi[:-1].sum(0).T / (gamma[:-1,:].sum(0) + self.epsilon)).T
+        Bjk = (gamma.T @ self.eye[seq])
+        Bjk = Bjk  / (Bjk.sum(axis=1).T[:,np.newaxis])
         return pii, Aij, Bjk
 
 
     def train(
         self, X, 
         epochs,
-        cost_thresh = 1e-05, 
+        cost_thresh = 1e-08, 
         wait_epochs = 7, 
         batch_update = False,
         model_path = 'hmmd-bestmodel.dat'):
@@ -147,7 +134,9 @@ class MarkovModel:
         nsamples = len(X)
         best_cost = 0.0
         wait = wait_epochs
-        self.epsilon = 1e-60
+        self.epsilon = 0.0
+
+        self.eye = np.eye(self.voc_length)
 
         for epoch in range(epochs):
             alphas = []
@@ -165,7 +154,7 @@ class MarkovModel:
                 # FWD BCKWD
                 alpha, beta = self.forward_backward(sample)
                 c = np.expand_dims(alpha.sum(axis=1) + self.epsilon, axis=1)
-                alpha, beta = alpha/c, beta/c
+                alpha, beta = alpha, beta
                 #beta[-1] = np.ones((self.hid_length))
 
                 gamma, xi = self.viterbi_gamma(sample, alpha, beta)
@@ -178,9 +167,9 @@ class MarkovModel:
                 
     
                 if batch_update:
-                    pii = pii + pi
-                    Aij = Aij + A
-                    Bjk = Bjk + B
+                    pii = pii + (pi / nsamples)
+                    Aij = Aij + (A / nsamples) 
+                    Bjk = Bjk + (B / nsamples)
                 else:
                     self.update_params(pi, A, B)
                 
@@ -213,7 +202,12 @@ if __name__ == '__main__':
     len(tokenized)
 
     markov = MarkovModel(hidden_states = 2, vocab = p.w2id)
-    markov.train(tokenized, epochs = 100, batch_update = True, model_path='hmmd-scaled.dat')
+    markov.train(
+        tokenized, 
+        epochs = 100, 
+        batch_update = True, 
+        model_path='hmmd-scaled.dat')
+
     print(p.vocab)
     print(markov.vocab)
     print('A', markov.Aij.round(2))
