@@ -23,10 +23,12 @@ class MarkovModel:
             self.pii = np.ones((self.hid_length)) / self.hid_length
             
             self.Aij = np.random.random((self.hid_length, self.hid_length))
-            self.Aij = self.Aij / self.Aij.sum(axis=0)
+            self.Aij = (self.Aij.T / self.Aij.sum(axis=1)).T
+            assert self.Aij[0].sum() == 1.0, 'wrong initialization A'
 
             self.Bjk = np.random.random((self.hid_length, self.voc_length))
-            self.Bjk = self.Bjk / self.Bjk.sum(axis=0)
+            self.Bjk = (self.Bjk.T / self.Bjk.sum(axis=1)).T
+            assert self.Bjk[0].sum() == 1.0, 'wrong initialization B'
         else:
             self.load_model(model_path)
 
@@ -74,11 +76,8 @@ class MarkovModel:
         beta[-1] = np.ones(self.hid_length)
 
         for t in range(1, seq_len):
-            obs_in_t = seq[t]
-            obs_in_t_next = seq[-t]
-
-            alpha[t] = (alpha[t-1] * self.Aij[:,:]) @ self.Bjk[:,obs_in_t]
-            beta[-t-1] = (self.Aij @ self.Bjk[:,obs_in_t_next]) * beta[-t]
+            alpha[t] = (alpha[t-1] * self.Aij.T).T @ self.Bjk[:, seq[t]]
+            beta[-t-1] = (beta[-t] * self.Aij.T).T @ self.Bjk[:, seq[-t]]
         
         return alpha, beta
 
@@ -115,8 +114,8 @@ class MarkovModel:
 
     def update_params(self, pii, Aij, Bjk):
         self.pii = pii / pii.sum(axis=0)
-        self.Aij = (Aij + self.epsilon) / (Aij + self.epsilon).sum(axis=0)
-        self.Bjk = (Bjk + self.epsilon) / (Bjk + self.epsilon).sum(axis=0)
+        self.Aij = ((Aij + self.epsilon).T / (Aij + self.epsilon).sum(axis=1)).T
+        self.Bjk = ((Bjk + self.epsilon).T / (Bjk + self.epsilon).sum(axis=1)).T
 
 
     def calc_new_params(self, gamma, xi, seq):
@@ -141,8 +140,7 @@ class MarkovModel:
         epochs,
         cost_thresh = 1e-05, 
         wait_epochs = 7, 
-        batch_update = True, 
-        scale = True):
+        batch_update = True):
 
         nsamples = len(X)
         best_cost = 0.0
@@ -199,11 +197,19 @@ class MarkovModel:
         
 
 if __name__ == '__main__':
-    with open('examples/texts.txt','r',encoding='utf8') as f:
-        texts = [line for line in f.read().split('\n') if len(line.strip())]
+    #with open('examples/texts.txt','r',encoding='utf8') as f:
+    #    texts = [line for line in f.read().split('\n') if len(line.strip())]
+    
+    with open('examples/coin_flip.txt','r',encoding='utf8') as f:
+        texts = [' '.join(list(line.strip())) for line in f]
+    
     p = Preprocessor()
     tokenized = p(texts)
     len(tokenized)
 
-    markov = MarkovModel(hidden_states = 4, vocab = p.w2id)
-    markov.train(tokenized, epochs = 100)
+    markov = MarkovModel(hidden_states = 2, vocab = p.w2id)
+    markov.train(tokenized, epochs = 100, batch_update = True)
+
+    print(markov.vocab)
+    print('A', markov.Aij.round(2))
+    print('B', markov.Bjk.round(2))
