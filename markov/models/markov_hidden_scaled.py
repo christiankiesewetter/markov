@@ -190,13 +190,14 @@ class MarkovModel:
             if cost.sum() - best_cost <= cost_thresh:
                 print(f'No improvement. Waiting {wait} further epochs')
                 
-                if int(wait_epochs - wait) in list(range(int(wait_epochs/2))):
+                if int(wait_epochs - wait) in list(range(int(wait_epochs/3))):
                     # add some randomness, if no improvement can be found... 
                     # just to make sure... modifiy two numbers
-                    for _ in range(min(self.randomize, self.hid_length**2)):
-                        p1, p2 = np.random.randint(0, self.hid_length, size=2)
-                        self.Aij[p1, p2] += np.clip(np.random.random(1)*2 - 1.0, a_min=0.0, a_max=1.0)
-                        self.update_params(self.pii, self.Aij, self.Bjk)
+                    for p1 in np.random.randint(0, self.hid_length, size=min(int(self.randomize / 2), self.hid_length)):
+                        for p2 in np.random.randint(0, self.hid_length, size=min(int(self.randomize /2), self.hid_length)):
+                            self.Aij[p1, p2] += np.random.random(1)
+                            self.Aij[p1, p2] = np.clip(self.Aij[p1,p2] , 0, 1.0)
+                    self.update_params(self.pii, self.Aij, self.Bjk)
                 if wait == 0:
                     break;
                 wait -=1
@@ -227,7 +228,7 @@ if __name__ == '__main__':
         lr = 0.3,
         wait_epochs = 30,
         cost_thresh = 1e-05,
-        randomize = 30,
+        randomize = 10,
         model_path='hmmd-scaled.dat')
 
     print(p.vocab)
