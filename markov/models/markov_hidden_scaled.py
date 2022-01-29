@@ -104,17 +104,16 @@ class MarkovModel:
         for t in range(1, seq_len):
             observation = seq[t]            
             delta[t] = np.max(delta[t-1] @ self.Aij.T) * self.Bjk[:,observation]
-            psi[t] = np.argmax(delta[t-1] @ self.Aij.T, axis=0)
+            psi[t] = np.argmax(delta[t-1] @ self.Aij.T, axis=0) 
 
-        return np.max(delta[-1]).round(4), np.argmax(delta[-1]), delta, psi
+        return np.max(delta[-1]).round(6), np.argmax(delta[-1]), delta, psi
 
 
     def update_params(self, pii, Aij, Bjk):
-        self.pii = pii / pii.sum()
-
         Aij = Aij * self.lr + self.Aij
         Bjk = Bjk * self.lr + self.Bjk
 
+        self.pii = pii / pii.sum()
         self.Aij = (Aij.T / (Aij.sum(axis=1) + self.epsilon)).T
         self.Bjk = (Bjk.T / (Bjk.sum(axis=1) + self.epsilon)).T
 
@@ -155,7 +154,7 @@ class MarkovModel:
             Aij = np.zeros((self.hid_length, self.hid_length), dtype=self.overall_dtype)
             Bjk = np.zeros((self.hid_length, self.voc_length), dtype=self.overall_dtype)
             
-            cost = np.zeros(nsamples, dtype=self.overall_dtype)
+            P = np.zeros(nsamples, dtype=self.overall_dtype)
 
             for n in range(nsamples):
                 sample = X[n]
@@ -164,30 +163,30 @@ class MarkovModel:
                 alpha, beta = self.forward_backward(sample)
                 c = np.expand_dims(alpha.sum(axis=1) + self.epsilon, axis=1)
                 alpha, beta = alpha, beta
-                #beta[-1] = np.ones((self.hid_length))
 
                 gamma, xi = self.viterbi_gamma(sample, alpha, beta)
                 alphas.append(alpha)
                 betas.append(beta)
                 gammas.append(gamma)
                 
-                cost[n] = np.product(alpha, axis=0).sum()
+                P[n] = np.product(alpha, axis=0).sum()
                 pi, A, B = self.calc_new_params(gamma, xi, sample)
                 
     
                 if batch_update:
-                    pii = pii + (pi / nsamples)
+                    # TODO: implement original algorithm -> kind of GD here
+                    pii = pii + (pi / (P[n] * nsamples))
                     Aij = Aij + (A / nsamples)
                     Bjk = Bjk + (B / nsamples)
                 else:
                     self.update_params(pi, A, B)
                 
-                self.print_progress(((n+1) / nsamples), f'Epoch {epoch} / Forward Prob: {cost.sum():.4f}', width = 50)
+                self.print_progress(((n+1) / nsamples), f'Epoch {epoch} / Forward Prob: {P.sum():.4f}', width = 50)
             
             if batch_update:
                 self.update_params(pii, Aij, Bjk)
 
-            if cost.sum() - best_cost <= cost_thresh:
+            if P.sum() - best_cost <= cost_thresh:
                 print(f'No improvement. Waiting {wait} further epochs')
                 
                 if int(wait_epochs - wait) in list(range(int(wait_epochs/3))):
@@ -202,7 +201,7 @@ class MarkovModel:
                     break;
                 wait -=1
             else:
-                best_cost = cost.sum()
+                best_cost = P.sum()
                 self.save_model(model_path)
                 wait = wait_epochs
             
@@ -223,9 +222,9 @@ if __name__ == '__main__':
     markov = MarkovModel(hidden_states = 8, vocab = p.w2id)
     markov.train(
         tokenized, 
-        epochs = 100, 
+        epochs = 1000, 
         batch_update = True, 
-        lr = 0.3,
+        lr = 0.01,
         wait_epochs = 30,
         cost_thresh = 1e-05,
         randomize = 10,
