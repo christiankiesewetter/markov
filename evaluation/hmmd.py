@@ -1,10 +1,10 @@
-from markov.models.markov_hidden import (
+from markov.models.markov_hidden_scaled import (
     MarkovModel as HiddenMarkov, 
 )
 import numpy as np
 
 if __name__ == '__main__':
-    hmm = HiddenMarkov(model_path='hmmd-bestmodel.dat')
+    hmm = HiddenMarkov(model_path='hmmd-scaled.dat')
     sequence = "Ja ja sagte er freudig"
     sequence = [hmm.vocab[w.lower()] for w in sequence.split()]
     id2w = {w:k for k, w in hmm.vocab.items()}
@@ -13,3 +13,4 @@ if __name__ == '__main__':
     perc, state, delta, psi = hmm.viterbi(sequence)
     print(np.argmax(delta, axis=1))
     print(psi)
+    print(perc)
