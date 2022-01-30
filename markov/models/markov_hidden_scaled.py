@@ -162,7 +162,6 @@ class MarkovModel:
                 # FWD BCKWD
                 alpha, beta = self.forward_backward(sample)
                 c = np.expand_dims(alpha.sum(axis=1) + self.epsilon, axis=1)
-                alpha, beta = alpha, beta
 
                 gamma, xi = self.viterbi_gamma(sample, alpha, beta)
                 alphas.append(alpha)
